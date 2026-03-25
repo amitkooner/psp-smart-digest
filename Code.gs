@@ -29,13 +29,22 @@ const CONFIG = {
   // Your locations of interest for housing/activities
   LOCATIONS_OF_INTEREST: [
     "Williamsburg",
+    "East Williamsburg",
     "Greenpoint",
-    "Bushwick",        // nearby Williamsburg
+    "Bushwick",
+    "Bed-Stuy",
+    "Bedford-Stuyvesant",
+    "Clinton Hill",
+    "Fort Greene",
+    "DUMBO",
+    "Brooklyn Heights",
+    "North Brooklyn",
     "upstate",
     "Hudson Valley",
     "Catskills",
     "Ulster County",
     "Dutchess County",
+    "High Falls",
   ],
 
   // Categories to surface (you can toggle these)
@@ -348,7 +357,7 @@ function classifyWithClaude_(emailBatch, babyAge) {
     '- ACTIVITIES: Baby-friendly events, classes, meetups, parenting workshops, swaps, demos. Include things relevant to new parents.\n' +
     '- FREE_STUFF: Any free item that could be useful for the family (baby-related or household). Great deals also qualify.\n' +
     '- HOUSING: Any housing mentions in/near: ' + locationsStr + '. Include sublets, rentals, house shares, weekend spots.\n' +
-    '- SKIP: Everything else (older kid stuff, irrelevant sizes, school topics, etc.)\n\n' +
+    '- SKIP: Everything else (older kid stuff, irrelevant sizes, school topics, breastfeeding/nursing/pumping items — family is formula feeding, etc.)\n\n' +
     'For each relevant item, return:\n' +
     '{\n' +
     '  "listing_id": "the listing_id provided with the listing",\n' +
@@ -616,14 +625,23 @@ function isObviouslyIrrelevant_(text, babyAge) {
   if (lower.indexOf("swap") > -1 || lower.indexOf("event") > -1) return false;
   if (lower.indexOf("ff:") > -1 || lower.indexOf("for free") > -1 || lower.indexOf("#forfree") > -1) return false;
   if (lower.indexOf("williamsburg") > -1 || lower.indexOf("upstate") > -1 ||
-      lower.indexOf("hudson valley") > -1 || lower.indexOf("catskill") > -1) return false;
+      lower.indexOf("hudson valley") > -1 || lower.indexOf("catskill") > -1 ||
+      lower.indexOf("greenpoint") > -1 || lower.indexOf("bushwick") > -1 ||
+      lower.indexOf("bed-stuy") > -1 || lower.indexOf("bedford") > -1 ||
+      lower.indexOf("clinton hill") > -1 || lower.indexOf("fort greene") > -1 ||
+      lower.indexOf("dumbo") > -1 || lower.indexOf("brooklyn heights") > -1 ||
+      lower.indexOf("high falls") > -1) return false;
   if (lower.indexOf("housing") > -1 || lower.indexOf("sublet") > -1 || lower.indexOf("rental") > -1) return false;
   if (lower.indexOf("meetup") > -1 || lower.indexOf("class") > -1 || lower.indexOf("workshop") > -1) return false;
+  if (lower.indexOf("walking group") > -1 || lower.indexOf("stroller") > -1 || lower.indexOf("playdate") > -1) return false;
+  if (lower.indexOf("mom group") > -1 || lower.indexOf("dad group") > -1 || lower.indexOf("parent group") > -1) return false;
+  if (lower.indexOf("bonding") > -1 || lower.indexOf("new mom") > -1 || lower.indexOf("new parent") > -1) return false;
+  if (lower.indexOf("music class") > -1 || lower.indexOf("story time") > -1 || lower.indexOf("storytime") > -1) return false;
 
   // Always keep: baby/infant terms
   if (lower.indexOf("baby") > -1 || lower.indexOf("infant") > -1 || lower.indexOf("newborn") > -1) return false;
-  if (lower.indexOf("stroller") > -1 || lower.indexOf("crib") > -1 || lower.indexOf("carrier") > -1) return false;
-  if (lower.indexOf("nursing") > -1 || lower.indexOf("pump") > -1 || lower.indexOf("bottle") > -1) return false;
+  if (lower.indexOf("crib") > -1 || lower.indexOf("carrier") > -1) return false;
+  if (lower.indexOf("bottle") > -1 || lower.indexOf("formula") > -1) return false;
   if (lower.indexOf("playpen") > -1 || lower.indexOf("play gym") > -1 || lower.indexOf("bouncer") > -1) return false;
   if (lower.indexOf("high chair") > -1 || lower.indexOf("car seat") > -1 || lower.indexOf("monitor") > -1) return false;
   if (lower.indexOf("swaddle") > -1 || lower.indexOf("teether") > -1 || lower.indexOf("jumper") > -1) return false;
@@ -644,6 +662,16 @@ function isObviouslyIrrelevant_(text, babyAge) {
         return true;
       }
     }
+  }
+
+  // Drop: breastfeeding/nursing items (family is formula feeding)
+  var bfPatterns = [/\bbreast\s*pump\b/i, /\bnursing\s*bra\b/i, /\bnursing\s*pad\b/i,
+    /\bpumping\s*bra\b/i, /\blactation\b/i, /\bbreastfeed/i, /\bnipple\s*pad/i,
+    /\bhaakaa\b/i, /\blansinoh\b/i, /\bspectra\b/i, /\bmedela\b/i,
+    /\bmilk\s*storage\s*bag/i, /\bnursing\s*pillow\b/i, /\bboppy\b/i,
+    /\bnursing\s*cover\b/i, /\bnursing\/pumping\b/i];
+  for (var bf = 0; bf < bfPatterns.length; bf++) {
+    if (bfPatterns[bf].test(text)) return true;
   }
 
   // Drop: clearly adult-only or irrelevant items
