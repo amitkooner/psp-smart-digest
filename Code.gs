@@ -18,16 +18,16 @@
 // ── CONFIGURATION ──────────────────────────────────────────────────────────
 const CONFIG = {
   // Your daughter's birthdate (used to auto-calculate age for relevance filtering)
-  BABY_BIRTHDATE: "2025-10-01", // Approximate — adjust to actual date
+  BABY_BIRTHDATE: "2025-01-01", // Replace with your child's actual birthdate
 
   // Who receives the daily digest email
   DIGEST_RECIPIENTS: [
-    "amit.kooner@gmail.com",
-    // Add your wife's email here: "wife@email.com",
+    "your-email@gmail.com",
+    // "partner-email@gmail.com",
   ],
 
-  // Your locations of interest for housing/activities
-  LOCATIONS_OF_INTEREST: [
+  // Pickup locations — North Brooklyn only (for gear, clothes, free stuff)
+  PICKUP_LOCATIONS: [
     "Williamsburg",
     "East Williamsburg",
     "Greenpoint",
@@ -37,6 +37,23 @@ const CONFIG = {
     "Clinton Hill",
     "Fort Greene",
     "DUMBO",
+    "Downtown Brooklyn",
+    "Brooklyn Heights",
+    "North Brooklyn",
+  ],
+
+  // Housing locations — includes upstate
+  HOUSING_LOCATIONS: [
+    "Williamsburg",
+    "East Williamsburg",
+    "Greenpoint",
+    "Bushwick",
+    "Bed-Stuy",
+    "Bedford-Stuyvesant",
+    "Clinton Hill",
+    "Fort Greene",
+    "DUMBO",
+    "Downtown Brooklyn",
     "Brooklyn Heights",
     "North Brooklyn",
     "upstate",
@@ -45,6 +62,14 @@ const CONFIG = {
     "Ulster County",
     "Dutchess County",
     "High Falls",
+  ],
+
+  // Current focus items (update as needs change)
+  FOCUS_ITEMS: [
+    "strollers",
+    "summer clothing sets (9 months and up)",
+    "activities and classes for babies",
+    "play sets and playgrounds",
   ],
 
   // Categories to surface (you can toggle these)
@@ -205,6 +230,43 @@ function runDailyDigest() {
 
   Logger.log("✅ Classification complete: " + allClassified.length + " relevant items found");
 
+  // 4b. Hard post-filter: drop items with pickup locations outside North Brooklyn
+  // This is deterministic — Claude sometimes lets Park Slope items through
+  var beforeFilter = allClassified.length;
+  allClassified = allClassified.filter(function(item) {
+    // Don't filter housing — those have different location rules
+    if (item.category === "HOUSING") return true;
+    // Don't filter activities — we'll go to nearby areas for good events
+    if (item.category === "ACTIVITIES") return true;
+
+    // Check the location field for non-North-Brooklyn areas
+    var loc = (item.location || "").toLowerCase();
+
+    var excludedAreas = [
+      "park slope", "south slope", "windsor terrace", "kensington",
+      "bay ridge", "sunset park", "borough park", "bensonhurst",
+      "flatbush", "prospect park south", "ditmas park", "midwood",
+      "sheepshead bay", "brighton beach", "coney island", "gravesend",
+      "crown heights", "brownsville", "east new york",
+      "cobble hill", "carroll gardens", "red hook", "gowanus",
+      "boerum hill", "prospect heights",
+      "manhattan", "queens", "bronx", "staten island",
+      "upper west", "upper east", "midtown", "tribeca", "soho",
+    ];
+
+    for (var ex = 0; ex < excludedAreas.length; ex++) {
+      // Only drop if the excluded area appears in the location field specifically
+      // (not just in the description, which might mention it in passing)
+      if (loc.indexOf(excludedAreas[ex]) > -1) return false;
+    }
+    return true;
+  });
+
+  if (beforeFilter > allClassified.length) {
+    Logger.log("📍 Location post-filter: dropped " + (beforeFilter - allClassified.length) +
+      " items outside North Brooklyn (kept " + allClassified.length + ")");
+  }
+
   // 5. Apply Gmail labels to relevant threads
   applyGmailLabels_(allClassified, emails);
 
@@ -340,7 +402,9 @@ function classifyWithClaude_(emailBatch, babyAge) {
     return [];
   }
 
-  var locationsStr = CONFIG.LOCATIONS_OF_INTEREST.join(", ");
+  var pickupLocationsStr = CONFIG.PICKUP_LOCATIONS.join(", ");
+  var housingLocationsStr = CONFIG.HOUSING_LOCATIONS.join(", ");
+  var focusStr = CONFIG.FOCUS_ITEMS.join("; ");
   var sizesStr = babyAge.clothingSizes.join(", ");
 
   var systemPrompt = 'You are a smart email classifier for a parent with a ' + babyAge.description + ' baby girl.\n\n' +
@@ -348,16 +412,18 @@ function classifyWithClaude_(emailBatch, babyAge) {
     '- Baby is ' + babyAge.description + '\n' +
     '- Relevant clothing sizes: ' + sizesStr + '\n' +
     '- Relevant gear stage: ' + babyAge.gearStage + '\n' +
-    '- Locations of interest for housing/activities: ' + locationsStr + '\n' +
-    '- The family lives in Williamsburg, Brooklyn and also has a place upstate\n\n' +
+    '- The family lives in Williamsburg, Brooklyn and also has a place upstate in High Falls, NY\n' +
+    '- Pickup locations (for gear, clothes, free stuff): ONLY items available for pickup in North Brooklyn: ' + pickupLocationsStr + '. Skip items only available in Park Slope, South Brooklyn, Manhattan, or other areas.\n' +
+    '- Housing locations: ' + housingLocationsStr + '\n\n' +
+    '- CURRENT FOCUS: The family is specifically looking for: ' + focusStr + '\n\n' +
     'TASK: Analyze each email/listing and extract ONLY items relevant to this family. Return a JSON array.\n\n' +
     'CLASSIFICATION RULES:\n' +
-    '- BABY_GEAR: Items appropriate for the baby\'s current age OR upcoming 3 months. Include play gyms, activity centers, carriers, strollers, car seats, high chairs, etc. Skip items for much older kids.\n' +
-    '- CLOTHES: Only clothes in sizes ' + sizesStr + ' or gender-neutral/girl items. Skip clothes for older kids.\n' +
-    '- ACTIVITIES: Baby-friendly events, classes, meetups, parenting workshops, swaps, demos. Include things relevant to new parents.\n' +
-    '- FREE_STUFF: Any free item that could be useful for the family (baby-related or household). Great deals also qualify.\n' +
-    '- HOUSING: Any housing mentions in/near: ' + locationsStr + '. Include sublets, rentals, house shares, weekend spots.\n' +
-    '- SKIP: Everything else (older kid stuff, irrelevant sizes, school topics, breastfeeding/nursing/pumping items — family is formula feeding, etc.)\n\n' +
+    '- BABY_GEAR: Prioritize the family\'s focus items: strollers, play sets. Also include other age-appropriate gear for the upcoming 3 months. ONLY include if pickup location is in North Brooklyn or not specified.\n' +
+    '- CLOTHES: Summer clothing sets and outfits in sizes 9M and up (' + sizesStr + '). Gender-neutral or girl items only. ONLY include if pickup location is in North Brooklyn or not specified.\n' +
+    '- ACTIVITIES: Baby-friendly events, classes, meetups, walking groups, bonding events, swaps, demos in or near North Brooklyn. Include things relevant to new parents.\n' +
+    '- FREE_STUFF: Any free baby-related item useful for the family. ONLY include if pickup location is in North Brooklyn or not specified.\n' +
+    '- HOUSING: Any housing mentions in/near: ' + housingLocationsStr + '. Include sublets, rentals, house shares, weekend spots.\n' +
+    '- SKIP: Everything else (older kid stuff, irrelevant sizes, school topics, breastfeeding/nursing/pumping items — family is formula feeding, items only available in Park Slope or outside North Brooklyn, etc.)\n\n' +
     'For each relevant item, return:\n' +
     '{\n' +
     '  "listing_id": "the listing_id provided with the listing",\n' +
@@ -374,8 +440,10 @@ function classifyWithClaude_(emailBatch, babyAge) {
     'IMPORTANT:\n' +
     '- Be selective. Only include genuinely relevant items.\n' +
     '- Always include the listing_id exactly as provided — this is used to attach reply links.\n' +
+    '- ALWAYS include the pickup/meetup location in the "location" field, even if it\'s just a neighborhood name like "Park Slope" or "7th Ave". This is critical for filtering.\n' +
     '- Mark events and swaps as urgency "high" if registration is opening soon.\n' +
     '- Return ONLY the JSON array, no other text. If nothing is relevant, return [].';
+
 
   // Build the listing content for this batch
   var emailTexts = emailBatch.map(function(e, idx) {
@@ -630,13 +698,18 @@ function isObviouslyIrrelevant_(text, babyAge) {
       lower.indexOf("bed-stuy") > -1 || lower.indexOf("bedford") > -1 ||
       lower.indexOf("clinton hill") > -1 || lower.indexOf("fort greene") > -1 ||
       lower.indexOf("dumbo") > -1 || lower.indexOf("brooklyn heights") > -1 ||
-      lower.indexOf("high falls") > -1) return false;
+      lower.indexOf("downtown brooklyn") > -1 || lower.indexOf("high falls") > -1) return false;
   if (lower.indexOf("housing") > -1 || lower.indexOf("sublet") > -1 || lower.indexOf("rental") > -1) return false;
   if (lower.indexOf("meetup") > -1 || lower.indexOf("class") > -1 || lower.indexOf("workshop") > -1) return false;
-  if (lower.indexOf("walking group") > -1 || lower.indexOf("stroller") > -1 || lower.indexOf("playdate") > -1) return false;
+  if (lower.indexOf("walking group") > -1 || lower.indexOf("playdate") > -1) return false;
   if (lower.indexOf("mom group") > -1 || lower.indexOf("dad group") > -1 || lower.indexOf("parent group") > -1) return false;
   if (lower.indexOf("bonding") > -1 || lower.indexOf("new mom") > -1 || lower.indexOf("new parent") > -1) return false;
   if (lower.indexOf("music class") > -1 || lower.indexOf("story time") > -1 || lower.indexOf("storytime") > -1) return false;
+
+  // Always keep: current focus items
+  if (lower.indexOf("stroller") > -1 || lower.indexOf("bugaboo") > -1 || lower.indexOf("uppababy") > -1) return false;
+  if (lower.indexOf("play set") > -1 || lower.indexOf("playset") > -1 || lower.indexOf("swing set") > -1) return false;
+  if (lower.indexOf("summer clothes") > -1 || lower.indexOf("summer outfit") > -1) return false;
 
   // Always keep: baby/infant terms
   if (lower.indexOf("baby") > -1 || lower.indexOf("infant") > -1 || lower.indexOf("newborn") > -1) return false;

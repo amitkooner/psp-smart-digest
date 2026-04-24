@@ -2,7 +2,7 @@
 
 **AI-powered daily digest that filters your Park Slope Parents listserv emails and surfaces only what's relevant to your family.**
 
-Built with Google Apps Script + Claude API. Zero maintenance — your child's age updates automatically and the relevance filters adapt as they grow.
+Built with Google Apps Script + Claude API (Haiku). Zero maintenance — your child's age updates automatically and the relevance filters adapt as they grow.
 
 ---
 
@@ -18,20 +18,21 @@ PSP Smart Digest runs daily in your Google account and:
 2. **Parses** digest emails into individual listings, extracting View/Reply links for each one
 3. **Pre-filters** obviously irrelevant items using keyword matching (~60-70% dropped before AI)
 4. **Classifies** remaining items with Claude, using your child's auto-calculated age to determine relevance
-5. **Sends** a clean, categorized HTML digest email to you (and your partner)
-6. **Labels** relevant Gmail threads by category for easy browsing
+5. **Post-filters** items outside your pickup radius (deterministic, not AI)
+6. **Sends** a clean, categorized HTML digest email to you (and your partner)
+7. **Labels** relevant Gmail threads by category for easy browsing
 
 ### What Gets Surfaced
 
 | Category | What it catches | Examples |
 |----------|----------------|---------|
-| 🍼 Baby Gear | Age-appropriate gear, toys, furniture | Play gyms, jumpers, high chairs, carriers |
-| 👗 Clothes | Only in your child's current size range | 6-9M onesies (not 3T jackets) |
-| 📅 Activities | Baby-friendly events, meetups, swaps | Babywearing demos, The Big Swap |
-| 🆓 Free Stuff | Free items useful for your family | Breast pumps, toy organizers |
+| 🍼 Baby Gear | Age-appropriate gear, toys, furniture | Strollers, play sets, high chairs, carriers |
+| 👗 Clothes | Only in your child's current size range | 6-9M summer outfits (not 3T jackets) |
+| 📅 Activities | Baby-friendly events, meetups, swaps | Walking groups, bonding events, The Big Swap |
+| 🆓 Free Stuff | Free items useful for your family | Toy organizers, baby gear |
 | 🏡 Housing | Listings near your locations of interest | Sublets, weekend rentals |
 
-Everything else is filtered out — older kid clothes, school advice, pet supplies, adult furniture, etc.
+Everything else is filtered out — older kid clothes, school advice, pet supplies, adult furniture, items outside your pickup area, etc.
 
 ## Architecture
 
@@ -41,21 +42,25 @@ Everything else is filtered out — older kid clothes, school advice, pet suppli
 │  (PSP emails)│───▶│ Script       │───▶│  (Haiku)     │───▶│ (to you +     │
 │              │    │ (daily 7am)  │    │  classify    │    │  partner)     │
 └─────────────┘    └──────────────┘    └──────────────┘    └───────────────┘
-                          │
-                    ┌─────┴──────┐
-                    │ Pre-filter  │  ← Drops ~60-70% of listings
-                    │ (keywords)  │    before API call
-                    └────────────┘
-                          │
-                          ▼
-                   ┌──────────────┐
-                   │ Gmail Labels  │
-                   │ PSP/Baby Gear │
-                   │ PSP/Activities│
-                   │ PSP/Free Stuff│
-                   │ PSP/Housing   │
-                   └──────────────┘
+                          │                                        │
+                    ┌─────┴──────┐                          ┌──────┴──────┐
+                    │ Pre-filter  │                          │ Post-filter  │
+                    │ (keywords)  │                          │ (location)   │
+                    └────────────┘                          └─────────────┘
+                  Drops ~60-70% of                        Drops items outside
+                  listings before                         your pickup area
+                  API call                                (deterministic)
 ```
+
+## Three-Layer Filtering
+
+The system uses three layers to maximize relevance while minimizing cost:
+
+1. **Keyword pre-filter** (before API call) — drops obviously irrelevant listings using regex patterns: older kid sizes, adult furniture, pet supplies, school topics, breastfeeding items (configurable), etc. Saves ~60-70% of API costs.
+
+2. **AI classification** (Claude Haiku) — classifies remaining listings using your child's auto-calculated age, relevant clothing sizes, gear stage, focus items, and pickup locations.
+
+3. **Location post-filter** (after API call) — deterministically drops items with pickup locations outside your configured area. Housing and activities are exempt (different location rules).
 
 ## Cost
 
@@ -64,8 +69,6 @@ Everything else is filtered out — older kid clothes, school advice, pet suppli
 | Google Apps Script | Free |
 | Claude API (Haiku) | ~$0.01–0.03/day |
 | **Monthly estimate** | **~$0.50–1.00** |
-
-The three-layer cost optimization (keyword pre-filter → aggressive text truncation → Haiku model) keeps daily runs well under $0.05.
 
 ## Setup (10 minutes)
 
@@ -86,16 +89,31 @@ The three-layer cost optimization (keyword pre-filter → aggressive text trunca
 Edit the `CONFIG` section at the top of the script:
 
 ```javascript
-BABY_BIRTHDATE: "2025-10-01",  // ← Your child's birthdate
+BABY_BIRTHDATE: "2025-01-01",  // ← Your child's actual birthdate
+
 DIGEST_RECIPIENTS: [
-  "you@gmail.com",              // ← Your email
-  "partner@gmail.com",          // ← Partner's email (optional)
+  "your-email@gmail.com",       // ← Your email
+  "partner-email@gmail.com",    // ← Partner's email (optional)
 ],
-LOCATIONS_OF_INTEREST: [
-  "Williamsburg",               // ← Add/remove your locations
+
+PICKUP_LOCATIONS: [              // ← Neighborhoods you'll pick up items from
+  "Williamsburg",
+  "Greenpoint",
+  // ...
+],
+
+HOUSING_LOCATIONS: [             // ← Areas to watch for housing (can be broader)
+  "Williamsburg",
   "upstate",
   "Hudson Valley",
   // ...
+],
+
+FOCUS_ITEMS: [                   // ← What you're specifically looking for right now
+  "strollers",
+  "summer clothing sets (9 months and up)",
+  "activities and classes for babies",
+  "play sets and playgrounds",
 ],
 ```
 
@@ -123,9 +141,11 @@ LOCATIONS_OF_INTEREST: [
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `BABY_BIRTHDATE` | `"2025-10-01"` | Child's birthdate — used to auto-calculate age, sizes, and gear stage |
+| `BABY_BIRTHDATE` | `"2025-01-01"` | Child's birthdate — used to auto-calculate age, sizes, and gear stage |
 | `DIGEST_RECIPIENTS` | `[]` | Array of email addresses to receive the daily digest |
-| `LOCATIONS_OF_INTEREST` | Williamsburg, upstate NY | Locations to watch for housing and local activities |
+| `PICKUP_LOCATIONS` | North Brooklyn | Neighborhoods you'll travel to for item pickup |
+| `HOUSING_LOCATIONS` | North Brooklyn + upstate | Locations to watch for housing listings |
+| `FOCUS_ITEMS` | Strollers, summer clothes, activities, play sets | What you're specifically looking for right now |
 | `HOURS_LOOKBACK` | `24` | How far back to scan for new emails |
 | `DIGEST_HOUR` | `7` | What hour (24h format) to send the daily digest |
 | `CLAUDE_MODEL` | `claude-haiku-4-5-20251001` | AI model — Haiku is recommended for cost efficiency |
@@ -149,11 +169,49 @@ The script auto-calculates your child's age from their birthdate on every run an
 
 | Age | Relevant Gear |
 |-----|--------------|
-| 0–4 months | Swaddles, bouncers, bassinets, play mats, nursing supplies |
+| 0–4 months | Swaddles, bouncers, bassinets, play mats, infant car seats |
 | 4–7 months | Play gyms, activity centers, bumbo seats, teethers, carriers |
 | 7–10 months | Baby gates, playpens, push toys, high chairs, sippy cups |
 | 10–13 months | Push walkers, shape sorters, ride-ons, convertible car seats |
 | 13–24 months | Ride-on toys, building blocks, toddler bikes, potty training |
+
+## Customization
+
+### Update your focus items
+
+As your child's needs change, update the `FOCUS_ITEMS` array — no other code changes needed:
+
+```javascript
+FOCUS_ITEMS: [
+  "winter jackets",
+  "toddler bikes",
+  "preschool recommendations",
+],
+```
+
+### Change digest time
+
+Edit `DIGEST_HOUR` in CONFIG (24-hour format), then re-run `initialSetup`.
+
+### Adjust pickup radius
+
+Add or remove neighborhoods from `PICKUP_LOCATIONS`. The post-filter has a built-in exclusion list for areas outside North Brooklyn — edit the `excludedAreas` array in the post-filter section to customize.
+
+### Filter out specific item types
+
+Add patterns to the `isObviouslyIrrelevant_` function. For example, the breastfeeding filter:
+
+```javascript
+var bfPatterns = [/\bbreast\s*pump\b/i, /\blactation\b/i, /\bhaakaa\b/i, ...];
+```
+
+### Run twice daily
+
+In `initialSetup`, change `.everyDays(1)` to `.everyHours(12)`.
+
+### Use a smarter model
+
+For better classification quality at higher cost, change `CLAUDE_MODEL` to `claude-sonnet-4-20250514`.
 
 ## Utility Functions
 
@@ -165,35 +223,27 @@ The script auto-calculates your child's age from their birthdate on every run an
 | `showConfig` | Prints current configuration and baby age to the log |
 | `initialSetup` | One-time setup: creates labels, sets daily trigger |
 
-## Customization
+## Adapting for a Different Listserv
 
-### Adapt for a different listserv
-
-The digest parsing logic (`parseDigestIntoListings_`) splits on `________` separator lines and extracts `View This Message:` / `Reply To This Message:` URLs — this is specific to the groups.io digest format used by PSP. To adapt for a different listserv:
+The digest parsing logic is specific to PSP's groups.io format. To adapt:
 
 1. Update the Gmail search query in `fetchPSPEmails_` to match the sender
 2. Adjust `parseDigestIntoListings_` for the email's separator format
 3. Adjust `extractLinks_` for the link format used
 4. Update the keyword pre-filter in `isObviouslyIrrelevant_` for your domain
-
-### Run twice daily
-
-In `initialSetup`, change `.everyDays(1)` to `.everyHours(12)`.
-
-### Use a smarter model
-
-For better classification quality at higher cost, change `CLAUDE_MODEL` to `claude-sonnet-4-20250514`.
+5. Update the location post-filter's `excludedAreas` for your geography
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| `Cannot call SpreadsheetApp.getUi()` | Make sure you're using v4+ of the script (this was fixed) |
 | No emails found | Run `previewPSPEmails` to verify Gmail search finds your PSP emails |
 | API error / 401 | Run `showConfig` to verify API key is set in Script Properties |
 | Auth error on first run | Click through Google's permission prompts — the script only accesses your Gmail |
 | Digest not arriving | Check spam folder; verify recipient emails in CONFIG |
 | High API costs | Ensure you're on Haiku model; check pre-filter is dropping listings in the log |
+| Items from wrong area | Check the post-filter log line; add neighborhoods to `excludedAreas` if needed |
+| Wrong baby age | Verify `BABY_BIRTHDATE` format is `YYYY-MM-DD` |
 
 ## License
 
