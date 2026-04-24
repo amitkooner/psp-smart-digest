@@ -18,12 +18,12 @@
 // ── CONFIGURATION ──────────────────────────────────────────────────────────
 const CONFIG = {
   // Your daughter's birthdate (used to auto-calculate age for relevance filtering)
-  BABY_BIRTHDATE: "2025-01-01", // Replace with your child's actual birthdate
+  BABY_BIRTHDATE: "2025-09-12",
 
   // Who receives the daily digest email
   DIGEST_RECIPIENTS: [
-    "your-email@gmail.com",
-    // "partner-email@gmail.com",
+    "amit.kooner@gmail.com",
+    "alecia.chen@gmail.com",
   ],
 
   // Pickup locations — North Brooklyn only (for gear, clothes, free stuff)
@@ -70,6 +70,7 @@ const CONFIG = {
     "summer clothing sets (9 months and up)",
     "activities and classes for babies",
     "play sets and playgrounds",
+    "baby formula",
   ],
 
   // Categories to surface (you can toggle these)
